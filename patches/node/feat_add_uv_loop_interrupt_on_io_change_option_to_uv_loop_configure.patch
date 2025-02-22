@@ -6,10 +6,10 @@ Subject: feat: add UV_LOOP_INTERRUPT_ON_IO_CHANGE option to uv_loop_configure
 https://github.com/libuv/libuv/pull/3308
 
 diff --git a/deps/uv/docs/src/loop.rst b/deps/uv/docs/src/loop.rst
-index 0f5ddfb3ca21b7e5b38d0a4ce4b9e77387597199..ba815202fb157aa82859ec0518523cf6f2ec6ba1 100644
+index d1f41e1c9f44838410326df23b1b175fa16ba199..dcf69093469b611a6f9db2bb84530456bc543301 100644
 --- a/deps/uv/docs/src/loop.rst
 +++ b/deps/uv/docs/src/loop.rst
-@@ -73,7 +73,15 @@ API
+@@ -86,6 +86,12 @@ API
  
        This option is necessary to use :c:func:`uv_metrics_idle_time`.
  
@@ -19,28 +19,23 @@ index 0f5ddfb3ca21b7e5b38d0a4ce4b9e77387597199..ba815202fb157aa82859ec0518523cf6
 +      This option is usually when implementing event loop integration, to make
 +      the polling of backend fd interrupt to recognize the changes of IO events.
 +
-     .. versionchanged:: 1.39.0 added the UV_METRICS_IDLE_TIME option.
-+    .. versionchanged:: 1.43.0 added the UV_LOOP_INTERRUPT_ON_IO_CHANGE option.
-+
- 
- .. c:function:: int uv_loop_close(uv_loop_t* loop)
+     - UV_LOOP_ENABLE_IO_URING_SQPOLL: Enable SQPOLL io_uring instance to handle
+       asynchronous file system operations.
  
 diff --git a/deps/uv/include/uv.h b/deps/uv/include/uv.h
-index ee1c94ccd389915ea7572cce044256a7788025ad..d31abf714d5d1433ec8473ccb1aae3b6615c477a 100644
+index 9e450c5110fe57117b686bf683cc6631f37efaeb..f75a496071ac3396cbc6dec819eaab7294609deb 100644
 --- a/deps/uv/include/uv.h
 +++ b/deps/uv/include/uv.h
-@@ -252,7 +252,8 @@ typedef struct uv_statfs_s uv_statfs_t;
- 
+@@ -261,6 +261,7 @@ typedef struct uv_metrics_s uv_metrics_t;
  typedef enum {
    UV_LOOP_BLOCK_SIGNAL = 0,
--  UV_METRICS_IDLE_TIME
-+  UV_METRICS_IDLE_TIME,
-+  UV_LOOP_INTERRUPT_ON_IO_CHANGE
+   UV_METRICS_IDLE_TIME,
++  UV_LOOP_INTERRUPT_ON_IO_CHANGE,
+   UV_LOOP_USE_IO_URING_SQPOLL
+ #define UV_LOOP_USE_IO_URING_SQPOLL UV_LOOP_USE_IO_URING_SQPOLL
  } uv_loop_option;
- 
- typedef enum {
 diff --git a/deps/uv/src/unix/async.c b/deps/uv/src/unix/async.c
-index e1805c323795e5b0c465d80100eebeb7bf838caa..dd4358c0cdaa97ba8fadf4d9755993803beddd18 100644
+index 0ff2669e30a628dbb2df9e28ba14b38cf14114e5..117190ef26338944b78dbed7380c631de8057223 100644
 --- a/deps/uv/src/unix/async.c
 +++ b/deps/uv/src/unix/async.c
 @@ -38,7 +38,6 @@
@@ -49,18 +44,18 @@ index e1805c323795e5b0c465d80100eebeb7bf838caa..dd4358c0cdaa97ba8fadf4d975599380
  
 -static void uv__async_send(uv_loop_t* loop);
  static int uv__async_start(uv_loop_t* loop);
+ static void uv__cpu_relax(void);
  
- 
-@@ -70,7 +69,7 @@ int uv_async_send(uv_async_t* handle) {
-     return 0;
+@@ -78,7 +77,7 @@ int uv_async_send(uv_async_t* handle) {
  
    /* Wake up the other thread's event loop. */
--  uv__async_send(handle->loop);
-+  uv__loop_interrupt(handle->loop);
+   if (atomic_exchange(pending, 1) == 0)
+-    uv__async_send(handle->loop);
++    uv__loop_interrupt(handle->loop);
  
-   /* Tell the other thread we're done. */
-   if (cmpxchgi(&handle->pending, 1, 2) != 1)
-@@ -165,40 +164,6 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
+   /* Set the loop to not-busy. */
+   atomic_fetch_add(busy, -1);
+@@ -178,39 +177,6 @@ static void uv__async_io(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
  }
  
  
@@ -97,15 +92,14 @@ index e1805c323795e5b0c465d80100eebeb7bf838caa..dd4358c0cdaa97ba8fadf4d975599380
 -  abort();
 -}
 -
--
+ 
  static int uv__async_start(uv_loop_t* loop) {
    int pipefd[2];
-   int err;
 diff --git a/deps/uv/src/unix/core.c b/deps/uv/src/unix/core.c
-index 54c769f37f2331136c87a37c13fb4e3f9a8f22f9..ac52ab79a5fc3050effd2b1f2f605cee9b1ab336 100644
+index 0c52ccf2ad7b2dcae77a7bc4b3af9d1a1346ce18..13cd33a7d3031c5e19c9418a18217d1e4158c82e 100644
 --- a/deps/uv/src/unix/core.c
 +++ b/deps/uv/src/unix/core.c
-@@ -900,6 +900,9 @@ void uv__io_start(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
+@@ -937,6 +937,9 @@ void uv__io_start(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
      loop->watchers[w->fd] = w;
      loop->nfds++;
    }
@@ -115,20 +109,20 @@ index 54c769f37f2331136c87a37c13fb4e3f9a8f22f9..ac52ab79a5fc3050effd2b1f2f605cee
  }
  
  
-@@ -931,6 +934,9 @@ void uv__io_stop(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
+@@ -968,6 +971,9 @@ void uv__io_stop(uv_loop_t* loop, uv__io_t* w, unsigned int events) {
    }
-   else if (QUEUE_EMPTY(&w->watcher_queue))
-     QUEUE_INSERT_TAIL(&loop->watcher_queue, &w->watcher_queue);
+   else if (uv__queue_empty(&w->watcher_queue))
+     uv__queue_insert_tail(&loop->watcher_queue, &w->watcher_queue);
 +
 +  if (uv__get_internal_fields(loop)->flags & UV_LOOP_INTERRUPT_ON_IO_CHANGE)
 +    uv__loop_interrupt(loop);
  }
  
  
-@@ -947,6 +953,9 @@ void uv__io_close(uv_loop_t* loop, uv__io_t* w) {
+@@ -984,6 +990,9 @@ void uv__io_close(uv_loop_t* loop, uv__io_t* w) {
  void uv__io_feed(uv_loop_t* loop, uv__io_t* w) {
-   if (QUEUE_EMPTY(&w->pending_queue))
-     QUEUE_INSERT_TAIL(&loop->pending_queue, &w->pending_queue);
+   if (uv__queue_empty(&w->pending_queue))
+     uv__queue_insert_tail(&loop->pending_queue, &w->pending_queue);
 +
 +  if (uv__get_internal_fields(loop)->flags & UV_LOOP_INTERRUPT_ON_IO_CHANGE)
 +    uv__loop_interrupt(loop);
@@ -136,22 +130,21 @@ index 54c769f37f2331136c87a37c13fb4e3f9a8f22f9..ac52ab79a5fc3050effd2b1f2f605cee
  
  
 diff --git a/deps/uv/src/unix/loop.c b/deps/uv/src/unix/loop.c
-index a88e71c339351f2ebcdd6c3f933fc3b1122910ed..46fc03264b6cc1a3a4d8faf5ec5a754fc07c9b6d 100644
+index 179ee999d8052e779dc692aeb5b673d210aaa997..03cca2c491015e5ef958f61a0167d29dfc56e247 100644
 --- a/deps/uv/src/unix/loop.c
 +++ b/deps/uv/src/unix/loop.c
-@@ -217,6 +217,11 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap) {
-     return 0;
+@@ -224,6 +224,10 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap) {
    }
+ #endif
  
 +  if (option == UV_LOOP_INTERRUPT_ON_IO_CHANGE) {
 +    lfields->flags |= UV_LOOP_INTERRUPT_ON_IO_CHANGE;
 +    return 0;
 +  }
-+
+ 
    if (option != UV_LOOP_BLOCK_SIGNAL)
      return UV_ENOSYS;
- 
-@@ -226,3 +231,40 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap) {
+@@ -234,3 +238,40 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap) {
    loop->flags |= UV_LOOP_BLOCK_SIGPROF;
    return 0;
  }
@@ -193,10 +186,10 @@ index a88e71c339351f2ebcdd6c3f933fc3b1122910ed..46fc03264b6cc1a3a4d8faf5ec5a754f
 +  abort();
 +}
 diff --git a/deps/uv/src/uv-common.h b/deps/uv/src/uv-common.h
-index 6001b0cf68d0b0268b578218b664a737f43c9521..5d2212571f4bcb648ab332f0c5650d0fdb37c03a 100644
+index 4baede2e506ee1787d554a0ec75bc9eb346fc8f2..385d4f420b50bfd2dc23f119d535c0442a3ce4e7 100644
 --- a/deps/uv/src/uv-common.h
 +++ b/deps/uv/src/uv-common.h
-@@ -140,6 +140,8 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap);
+@@ -144,6 +144,8 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap);
  
  void uv__loop_close(uv_loop_t* loop);
  
@@ -205,7 +198,7 @@ index 6001b0cf68d0b0268b578218b664a737f43c9521..5d2212571f4bcb648ab332f0c5650d0f
  int uv__read_start(uv_stream_t* stream,
                     uv_alloc_cb alloc_cb,
                     uv_read_cb read_cb);
-@@ -268,6 +270,10 @@ void uv__threadpool_cleanup(void);
+@@ -280,6 +282,10 @@ void uv__threadpool_cleanup(void);
      if (((h)->flags & UV_HANDLE_ACTIVE) != 0) break;                          \
      (h)->flags |= UV_HANDLE_ACTIVE;                                           \
      if (((h)->flags & UV_HANDLE_REF) != 0) uv__active_handle_add(h);          \
@@ -217,7 +210,7 @@ index 6001b0cf68d0b0268b578218b664a737f43c9521..5d2212571f4bcb648ab332f0c5650d0f
    while (0)
  
 diff --git a/deps/uv/src/win/core.c b/deps/uv/src/win/core.c
-index 67af93e6571ed4324d80b6dfb2ff93db7b9cd9b1..e88008b6a288d1508c5c117d814000d63cab81c3 100644
+index e9885a0f1ff3890a8d957c8793e22b01cedc0e97..ae3d09878253fe7169ad7b74b3faea0223f89de5 100644
 --- a/deps/uv/src/win/core.c
 +++ b/deps/uv/src/win/core.c
 @@ -384,10 +384,20 @@ int uv__loop_configure(uv_loop_t* loop, uv_loop_option option, va_list ap) {
@@ -242,7 +235,7 @@ index 67af93e6571ed4324d80b6dfb2ff93db7b9cd9b1..e88008b6a288d1508c5c117d814000d6
    return -1;
  }
 diff --git a/deps/uv/test/test-embed.c b/deps/uv/test/test-embed.c
-index 1d3355fdc67310feb63738c9e30724f0e77f7895..77a63dbb4d188b2ad571c814dbc6cbc6fe5fa205 100644
+index 6e9917239aa5626dd56fffd6eb2469d3e63224bf..b0da9d1cddc69428e9fb3379d1338cf893ab93d2 100644
 --- a/deps/uv/test/test-embed.c
 +++ b/deps/uv/test/test-embed.c
 @@ -25,54 +25,184 @@
@@ -279,7 +272,7 @@ index 1d3355fdc67310feb63738c9e30724f0e77f7895..77a63dbb4d188b2ad571c814dbc6cbc6
 -static void thread_main(void* arg) {
 -  ASSERT_LE(0, uv_barrier_wait(&barrier));
 -  uv_sleep(250);
--  ASSERT_EQ(0, uv_async_send(&async));
+-  ASSERT_OK(uv_async_send(&async));
 -}
 +static uv_timer_t main_timer;
 +static int main_timer_called;
@@ -334,9 +327,9 @@ index 1d3355fdc67310feb63738c9e30724f0e77f7895..77a63dbb4d188b2ad571c814dbc6cbc6
 -  uv_loop_t* loop;
 -
 -  loop = uv_default_loop();
--  ASSERT_EQ(0, uv_async_init(loop, &async, async_cb));
--  ASSERT_EQ(0, uv_barrier_init(&barrier, 2));
--  ASSERT_EQ(0, uv_thread_create(&thread, thread_main, NULL));
+-  ASSERT_OK(uv_async_init(loop, &async, async_cb));
+-  ASSERT_OK(uv_barrier_init(&barrier, 2));
+-  ASSERT_OK(uv_thread_create(&thread, thread_main, NULL));
 -  ASSERT_LE(0, uv_barrier_wait(&barrier));
 -
 -  while (uv_loop_alive(loop)) {
@@ -458,18 +451,18 @@ index 1d3355fdc67310feb63738c9e30724f0e77f7895..77a63dbb4d188b2ad571c814dbc6cbc6
 +  uv_timer_init(&external_loop, &external_timer);
 +  uv_timer_start(&external_timer, external_timer_cb, 100, 0);
  
--  ASSERT_EQ(0, uv_thread_join(&thread));
+-  ASSERT_OK(uv_thread_join(&thread));
 -  uv_barrier_destroy(&barrier);
 +  run_loop();
 +  ASSERT_EQ(main_timer_called, 1);
  
-   MAKE_VALGRIND_HAPPY();
+   MAKE_VALGRIND_HAPPY(loop);
    return 0;
 diff --git a/deps/uv/test/test-list.h b/deps/uv/test/test-list.h
-index b19c10c7e40c77061337416fd623c53d0863d276..1f54ac21c36902bccb35c64cefa8bb14dd675bb0 100644
+index e07bd61ecf73c122a553d5d8232a7478980751a5..21cf8c09edac15ba5ea010d54d3e158e0d1b7e5b 100644
 --- a/deps/uv/test/test-list.h
 +++ b/deps/uv/test/test-list.h
-@@ -265,6 +265,7 @@ TEST_DECLARE   (process_priority)
+@@ -279,6 +279,7 @@ TEST_DECLARE   (process_priority)
  TEST_DECLARE   (has_ref)
  TEST_DECLARE   (active)
  TEST_DECLARE   (embed)
@@ -477,7 +470,7 @@ index b19c10c7e40c77061337416fd623c53d0863d276..1f54ac21c36902bccb35c64cefa8bb14
  TEST_DECLARE   (async)
  TEST_DECLARE   (async_null_cb)
  TEST_DECLARE   (eintr_handling)
-@@ -867,6 +868,7 @@ TASK_LIST_START
+@@ -919,6 +920,7 @@ TASK_LIST_START
    TEST_ENTRY  (active)
  
    TEST_ENTRY  (embed)

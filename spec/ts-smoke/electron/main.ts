@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import {
   app,
   autoUpdater,
@@ -22,7 +24,7 @@ import {
 } from 'electron/main';
 
 import { clipboard, crashReporter, nativeImage, shell } from 'electron/common';
-import * as path from 'path';
+import * as path from 'node:path';
 
 // Quick start
 // https://github.com/electron/electron/blob/main/docs/tutorial/quick-start.md
@@ -90,7 +92,11 @@ app.whenReady().then(() => {
     },
     printBackground: true,
     pageRanges: '1-3',
-    landscape: true
+    landscape: true,
+    pageSize: {
+      width: 100,
+      height: 100
+    }
   }).then((data: Buffer) => console.log(data));
 
   mainWindow.webContents.printToPDF({}).then(data => console.log(data));
@@ -331,9 +337,6 @@ ipcMain.on('online-status-changed', (event, status: any) => {
   console.log(status);
 });
 
-// Synopsis
-// https://github.com/electron/electron/blob/main/docs/api/synopsis.md
-
 app.whenReady().then(() => {
   window = new BrowserWindow({
     width: 800,
@@ -356,20 +359,19 @@ app.commandLine.appendSwitch('vmodule', 'console=0');
 const browserOptions = {
   width: 1000,
   height: 800,
-  transparent: false,
-  frame: true
+  transparent: true,
+  frame: false
 };
-
-// Make the window transparent only if the platform supports it.
-if (process.platform !== 'win32' || systemPreferences.isAeroGlassEnabled()) {
-  browserOptions.transparent = true;
-  browserOptions.frame = false;
-}
 
 if (process.platform === 'win32') {
   systemPreferences.on('color-changed', () => { console.log('color changed'); });
+  // @ts-expect-error Removed API
   systemPreferences.on('inverted-color-scheme-changed', (_, inverted) => console.log(inverted ? 'inverted' : 'not inverted'));
+  // @ts-expect-error Removed API
+  systemPreferences.on('high-contrast-color-scheme-changed', (_, highContrast) => console.log(highContrast ? 'high contrast' : 'not high contrast'));
   console.log('Color for menu is', systemPreferences.getColor('menu'));
+  // @ts-expect-error Removed API
+  systemPreferences.isAeroGlassEnabled();
 }
 
 if (process.platform === 'darwin') {
@@ -377,6 +379,14 @@ if (process.platform === 'darwin') {
   console.log(value);
   const value2 = systemPreferences.getUserDefault('Foo', 'boolean');
   console.log(value2);
+  // @ts-expect-error Removed API
+  console.log(systemPreferences.getAppLevelAppearance());
+  // @ts-expect-error Removed API
+  systemPreferences.setAppLevelAppearance('dark');
+  // @ts-expect-error Removed API
+  console.log(systemPreferences.appLevelAppearance);
+  // @ts-expect-error Removed API
+  console.log(systemPreferences.getColor('alternate-selected-control-text'));
 }
 
 // Create the window.
@@ -420,6 +430,20 @@ win2.once('ready-to-show', () => {
 
 app.relaunch({ args: process.argv.slice(1).concat(['--relaunch']) });
 app.exit(0);
+
+app.configureHostResolver({ secureDnsMode: 'off' });
+
+// @ts-expect-error Invalid type value
+app.configureHostResolver({ secureDnsMode: 'foo' });
+
+// @ts-expect-error Removed API
+console.log(app.runningUnderRosettaTranslation);
+
+// @ts-expect-error Removed API
+app.on('gpu-process-crashed', () => {});
+
+// @ts-expect-error Removed API
+app.on('renderer-process-crashed', () => {});
 
 // auto-updater
 // https://github.com/electron/electron/blob/main/docs/api/auto-updater.md
@@ -506,10 +530,32 @@ dialog.showOpenDialog(win3, {
   console.log(ret);
 });
 
+// variants without browserWindow
+dialog.showMessageBox({ message: 'test', type: 'warning' });
+dialog.showMessageBoxSync({ message: 'test', type: 'error' });
+
+// @ts-expect-error Invalid type value
+dialog.showMessageBox({ message: 'test', type: 'foo' });
+// @ts-expect-error Invalid type value
+dialog.showMessageBoxSync({ message: 'test', type: 'foo' });
+
+// variants with browserWindow
+dialog.showMessageBox(win3, { message: 'test', type: 'question' });
+dialog.showMessageBoxSync(win3, { message: 'test', type: 'info' });
+
+// @ts-expect-error Invalid type value
+dialog.showMessageBox(win3, { message: 'test', type: 'foo' });
+// @ts-expect-error Invalid type value
+dialog.showMessageBoxSync(win3, { message: 'test', type: 'foo' });
+
 // desktopCapturer
 // https://github.com/electron/electron/blob/main/docs/api/desktop-capturer.md
 
 ipcMain.handle('get-sources', (event, options) => desktopCapturer.getSources(options));
+
+desktopCapturer.getSources({ types: ['window', 'screen'] });
+// @ts-expect-error Invalid type value
+desktopCapturer.getSources({ types: ['unknown'] });
 
 // global-shortcut
 // https://github.com/electron/electron/blob/main/docs/api/global-shortcut.md
@@ -532,14 +578,14 @@ globalShortcut.unregisterAll();
 // ipcMain
 // https://github.com/electron/electron/blob/main/docs/api/ipc-main.md
 
+ipcMain.handle('ping-pong', (event, arg: any) => {
+  console.log(arg); // prints "ping"
+  return 'pong';
+});
+
 ipcMain.on('asynchronous-message', (event, arg: any) => {
   console.log(arg); // prints "ping"
   event.sender.send('asynchronous-reply', 'pong');
-});
-
-ipcMain.on('synchronous-message', (event, arg: any) => {
-  console.log(arg); // prints "ping"
-  event.returnValue = 'pong';
 });
 
 ipcMain.on('synchronous-message', (event, arg: any) => {
@@ -669,7 +715,7 @@ const template = <Electron.MenuItemConstructorOptions[]> [
         label: 'Reload',
         accelerator: 'Command+R',
         click: (item, focusedWindow) => {
-          if (focusedWindow) {
+          if (focusedWindow instanceof BrowserWindow) {
             focusedWindow.webContents.reloadIgnoringCache();
           }
         }
@@ -678,7 +724,7 @@ const template = <Electron.MenuItemConstructorOptions[]> [
         label: 'Toggle DevTools',
         accelerator: 'Alt+Command+I',
         click: (item, focusedWindow) => {
-          if (focusedWindow) {
+          if (focusedWindow instanceof BrowserWindow) {
             focusedWindow.webContents.toggleDevTools();
           }
         }
@@ -690,7 +736,7 @@ const template = <Electron.MenuItemConstructorOptions[]> [
         label: 'Actual Size',
         accelerator: 'CmdOrCtrl+0',
         click: (item, focusedWindow) => {
-          if (focusedWindow) {
+          if (focusedWindow instanceof BrowserWindow) {
             focusedWindow.webContents.zoomLevel = 0;
           }
         }
@@ -699,7 +745,7 @@ const template = <Electron.MenuItemConstructorOptions[]> [
         label: 'Zoom In',
         accelerator: 'CmdOrCtrl+Plus',
         click: (item, focusedWindow) => {
-          if (focusedWindow) {
+          if (focusedWindow instanceof BrowserWindow) {
             const { webContents } = focusedWindow;
             webContents.zoomLevel += 0.5;
           }
@@ -709,7 +755,7 @@ const template = <Electron.MenuItemConstructorOptions[]> [
         label: 'Zoom Out',
         accelerator: 'CmdOrCtrl+-',
         click: (item, focusedWindow) => {
-          if (focusedWindow) {
+          if (focusedWindow instanceof BrowserWindow) {
             const { webContents } = focusedWindow;
             webContents.zoomLevel -= 0.5;
           }
@@ -809,6 +855,7 @@ Menu.buildFromTemplate([
   { role: 'toggleTabBar' },
   { role: 'selectNextTab' },
   { role: 'selectPreviousTab' },
+  { role: 'showAllTabs' },
   { role: 'mergeAllWindows' },
   { role: 'clearRecentDocuments' },
   { role: 'moveTabToNewWindow' }
@@ -884,7 +931,8 @@ app.whenReady().then(() => {
 const id = powerSaveBlocker.start('prevent-display-sleep');
 console.log(powerSaveBlocker.isStarted(id));
 
-powerSaveBlocker.stop(id);
+const stopped = powerSaveBlocker.stop(id);
+console.log(`The powerSaveBlocker is ${stopped ? 'stopped' : 'not stopped'}`);
 
 // protocol
 // https://github.com/electron/electron/blob/main/docs/api/protocol.md
@@ -1014,6 +1062,12 @@ appIcon4.destroy();
 const image2 = nativeImage.createFromPath('/Users/somebody/images/icon.png');
 console.log(image2.getSize());
 
+image2.resize({ quality: 'best' });
+image2.resize({ quality: 'better' });
+image2.resize({ quality: 'good' });
+// @ts-expect-error Invalid type value
+image2.resize({ quality: 'bad' });
+
 // process
 // https://github.com/electron/electron/blob/main/docs/api/process.md
 
@@ -1117,11 +1171,21 @@ shell.writeShortcutLink('/home/user/Desktop/shortcut.lnk', 'update', shell.readS
 // session
 // https://github.com/electron/electron/blob/main/docs/api/session.md
 
+session.defaultSession.clearStorageData({ storages: ['cookies', 'filesystem'] });
+session.defaultSession.clearStorageData({ storages: ['localstorage', 'indexdb', 'serviceworkers'] });
+session.defaultSession.clearStorageData({ storages: ['shadercache', 'cachestorage'] });
+// @ts-expect-error Invalid type value
+session.defaultSession.clearStorageData({ storages: ['wrong_path'] });
+
+session.defaultSession.clearStorageData({ quotas: ['syncable', 'temporary'] });
+// @ts-expect-error Invalid type value
+session.defaultSession.clearStorageData({ quotas: ['bad_type'] });
+
 session.defaultSession.on('will-download', (event, item, webContents) => {
   console.log('will-download', webContents.id);
   event.preventDefault();
   require('got')(item.getURL()).then((data: any) => {
-    require('fs').writeFileSync('/somewhere', data);
+    require('node:fs').writeFileSync('/somewhere', data);
   });
 });
 
@@ -1229,7 +1293,34 @@ win4.webContents.on('paint', (event, dirty, _image) => {
   console.log(dirty, _image.getBitmap());
 });
 
+win4.webContents.on('devtools-open-url', (event, url) => {
+  console.log(url);
+});
+
+win4.webContents.insertCSS('body {}', { cssOrigin: 'user' });
+
+// @ts-expect-error Invalid type value
+win4.webContents.insertCSS('body {}', { cssOrigin: 'foo' });
+
 win4.loadURL('http://github.com');
+
+// @ts-expect-error Removed API
+win4.webContents.getPrinters();
+
+// @ts-expect-error Removed API
+win4.webContents.on('scroll-touch-begin', () => {});
+// @ts-expect-error Removed API
+win4.webContents.on('scroll-touch-edge', () => {});
+// @ts-expect-error Removed API
+win4.webContents.on('scroll-touch-end', () => {});
+
+// @ts-expect-error Removed API
+win4.webContents.on('crashed', () => {});
+
+win4.webContents.on('context-menu', (event, params) => {
+  // @ts-expect-error Removed API
+  console.log(params.inputFieldType);
+});
 
 // TouchBar
 // https://github.com/electron/electron/blob/main/docs/api/touch-bar.md
