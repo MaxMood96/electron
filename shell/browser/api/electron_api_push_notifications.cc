@@ -4,15 +4,12 @@
 
 #include "shell/browser/api/electron_api_push_notifications.h"
 
-#include <string>
-
+#include "gin/handle.h"
 #include "shell/common/gin_converters/value_converter.h"
 #include "shell/common/gin_helper/dictionary.h"
 #include "shell/common/node_includes.h"
 
-namespace electron {
-
-namespace api {
+namespace electron::api {
 
 PushNotifications* g_push_notifications = nullptr;
 
@@ -55,9 +52,7 @@ const char* PushNotifications::GetTypeName() {
   return "PushNotifications";
 }
 
-}  // namespace api
-
-}  // namespace electron
+}  // namespace electron::api
 
 namespace {
 

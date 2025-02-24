@@ -1,5 +1,8 @@
 import { BrowserWindow, app, Menu, MenuItem, MenuItemConstructorOptions } from 'electron/main';
+
 import { expect } from 'chai';
+
+import { ifdescribe } from './lib/spec-helpers';
 import { closeAllWindows } from './lib/window-helpers';
 import { roleList, execute } from '../lib/browser/api/menu-item-roles';
 
@@ -135,9 +138,9 @@ describe('MenuItems', () => {
 
         const groups = findRadioGroups(template);
 
-        groups.forEach(g => {
+        for (const g of groups) {
           expect(findChecked(menu.items, g.begin!, g.end!)).to.deep.equal([g.begin]);
-        });
+        }
       });
 
       it('should assign groupId automatically', () => {
@@ -145,7 +148,7 @@ describe('MenuItems', () => {
 
         const usedGroupIds = new Set();
         const groups = findRadioGroups(template);
-        groups.forEach(g => {
+        for (const g of groups) {
           const groupId = (menu.items[g.begin!] as any).groupId;
 
           // groupId should be previously unused
@@ -157,14 +160,14 @@ describe('MenuItems', () => {
           for (let i = g.begin!; i < g.end!; ++i) {
             expect((menu.items[i] as any).groupId).to.equal(groupId);
           }
-        });
+        }
       });
 
       it("setting 'checked' should flip other items' 'checked' property", () => {
         const menu = Menu.buildFromTemplate(template);
 
         const groups = findRadioGroups(template);
-        groups.forEach(g => {
+        for (const g of groups) {
           expect(findChecked(menu.items, g.begin!, g.end!)).to.deep.equal([]);
 
           menu.items[g.begin!].checked = true;
@@ -172,7 +175,7 @@ describe('MenuItems', () => {
 
           menu.items[g.end! - 1].checked = true;
           expect(findChecked(menu.items, g.begin!, g.end!)).to.deep.equal([g.end! - 1]);
-        });
+        }
       });
     });
   });
@@ -280,13 +283,7 @@ describe('MenuItems', () => {
     });
   });
 
-  describe('MenuItem appMenu', () => {
-    before(function () {
-      if (process.platform !== 'darwin') {
-        this.skip();
-      }
-    });
-
+  ifdescribe(process.platform === 'darwin')('MenuItem appMenu', () => {
     it('includes a default submenu layout when submenu is empty', () => {
       const item = new MenuItem({ role: 'appMenu' });
 
