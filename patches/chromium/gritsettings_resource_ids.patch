@@ -6,18 +6,18 @@ Subject: gritsettings_resource_ids.patch
 Add electron resources file to the list of resource ids generation.
 
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 15e77b25cc0b10e59d154d2389d4b8dbaca6391a..5217174af25d95562b959974e3a9b491ea70b228 100644
+index 2cd6ca756a745e1387469914eb3d649dff104ccb..45ce48afff4178af11d3cb55b859c9b48aa5ab60 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -1107,6 +1107,11 @@
-     "includes": [4960],
-   },
- 
+@@ -1472,6 +1472,11 @@
+   "<(SHARED_INTERMEDIATE_DIR)/third_party/blink/public/strings/permission_element_generated_strings.grd": {
+     "META": {"sizes": {"messages": [2000],}},
+     "messages": [10080],
++  },
++
 +  "electron/electron_resources.grd": {
 +    "messages": [31750],
 +    "includes": [31950],
-+  },
-+
-   # END "everything else" section.
-   # Everything but chrome/, components/, content/, and ios/
+   }
  
+   # END "everything else" section.

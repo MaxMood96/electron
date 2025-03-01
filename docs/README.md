@@ -21,7 +21,6 @@ an issue:
 ### Getting started
 
 * [Introduction](tutorial/introduction.md)
-* [Quick Start](tutorial/quick-start.md)
 * [Process Model](tutorial/process-model.md)
 
 ### Learning the basics
@@ -37,6 +36,7 @@ an issue:
   * [Offline/Online Detection](tutorial/online-offline-events.md)
   * [Represented File for macOS BrowserWindows](tutorial/represented-file.md)
   * [Native File Drag & Drop](tutorial/native-file-drag-drop.md)
+  * [Navigation History](tutorial/navigation-history.md)
   * [Offscreen Rendering](tutorial/offscreen-rendering.md)
   * [Dark Mode](tutorial/dark-mode.md)
   * [Web embeds in Electron](tutorial/web-embeds.md)
@@ -90,7 +90,6 @@ These individual tutorials expand on topics discussed in the guide above.
 
 ## API References
 
-* [Synopsis](api/synopsis.md)
 * [Process Object](api/process.md)
 * [Supported Command Line Switches](api/command-line-switches.md)
 * [Environment Variables](api/environment-variables.md)
@@ -99,7 +98,6 @@ These individual tutorials expand on topics discussed in the guide above.
 
 ### Custom DOM Elements:
 
-* [`File` Object](api/file-object.md)
 * [`<webview>` Tag](api/webview-tag.md)
 * [`window.open` Function](api/window-open.md)
 
@@ -107,7 +105,7 @@ These individual tutorials expand on topics discussed in the guide above.
 
 * [app](api/app.md)
 * [autoUpdater](api/auto-updater.md)
-* [BrowserView](api/browser-view.md)
+* [BaseWindow](api/base-window.md)
 * [BrowserWindow](api/browser-window.md)
 * [contentTracing](api/content-tracing.md)
 * [desktopCapturer](api/desktop-capturer.md)
@@ -129,14 +127,17 @@ These individual tutorials expand on topics discussed in the guide above.
 * [pushNotifications](api/push-notifications.md)
 * [safeStorage](api/safe-storage.md)
 * [screen](api/screen.md)
+* [ServiceWorkerMain](api/service-worker-main.md)
 * [session](api/session.md)
 * [ShareMenu](api/share-menu.md)
 * [systemPreferences](api/system-preferences.md)
 * [TouchBar](api/touch-bar.md)
 * [Tray](api/tray.md)
 * [utilityProcess](api/utility-process.md)
+* [View](api/view.md)
 * [webContents](api/web-contents.md)
 * [webFrameMain](api/web-frame-main.md)
+* [WebContentsView](api/web-contents-view.md)
 
 ### Modules for the Renderer Process (Web Page):
 

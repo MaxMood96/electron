@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Samuel Attard <marshallofsound@electronjs.org>
+Date: Wed, 1 May 2024 11:12:44 -0700
+Subject: partially revert is_newly_created to allow for browser initiated
+ about:blank loads
+
+We should either wire in debug info from about:blank loads or more cleanly add
+an about:blank check to this area.
+
+Ref: https://chromium-review.googlesource.com/c/chromium/src/+/5403876
+
+diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
+index b7a1be346c77fcef6c288789bc11f9849d6a126d..2b6d2a4c068757fa6dd16c7a0ffb7d478993d7d8 100644
+--- a/content/browser/renderer_host/render_frame_host_impl.cc
++++ b/content/browser/renderer_host/render_frame_host_impl.cc
+@@ -802,8 +802,8 @@ void VerifyThatBrowserAndRendererCalculatedOriginsToCommitMatch(
+   // TODO(crbug.com/40092527): Consider adding a separate boolean that
+   // tracks this instead of piggybacking `origin_calculation_debug_info`.
+   if (renderer_side_origin.opaque() &&
+-      browser_side_origin_and_debug_info.first->opaque() &&
+-      params.origin_calculation_debug_info.ends_with("is_newly_created")) {
++      browser_side_origin_and_debug_info.first->opaque() /*&&
++      params.origin_calculation_debug_info.ends_with("is_newly_created")*/) {
+     origins_match = (renderer_side_origin.GetTupleOrPrecursorTupleIfOpaque() ==
+                      browser_side_origin_and_debug_info.first
+                          ->GetTupleOrPrecursorTupleIfOpaque());

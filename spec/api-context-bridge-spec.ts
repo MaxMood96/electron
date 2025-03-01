@@ -1,15 +1,17 @@
 import { BrowserWindow, ipcMain } from 'electron/main';
 import { contextBridge } from 'electron/renderer';
-import { expect } from 'chai';
-import * as fs from 'fs-extra';
-import * as http from 'http';
-import * as os from 'os';
-import * as path from 'path';
-import * as cp from 'child_process';
 
-import { closeWindow } from './lib/window-helpers';
+import { expect } from 'chai';
+
+import * as cp from 'node:child_process';
+import { once } from 'node:events';
+import * as fs from 'node:fs';
+import * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { listen } from './lib/spec-helpers';
-import { once } from 'events';
+import { closeWindow } from './lib/window-helpers';
 
 const fixturesPath = path.resolve(__dirname, 'fixtures', 'api', 'context-bridge');
 
@@ -34,7 +36,7 @@ describe('contextBridge', () => {
 
   afterEach(async () => {
     await closeWindow(w);
-    if (dir) await fs.remove(dir);
+    if (dir) await fs.promises.rm(dir, { force: true, recursive: true });
   });
 
   it('should not be accessible when contextIsolation is disabled', async () => {
@@ -67,16 +69,20 @@ describe('contextBridge', () => {
     describe(`with sandbox=${useSandbox}`, () => {
       const makeBindingWindow = async (bindingCreator: Function, worldId: number = 0) => {
         const preloadContentForMainWorld = `const renderer_1 = require('electron');
-        ${useSandbox ? '' : `require('v8').setFlagsFromString('--expose_gc');
-        const gc=require('vm').runInNewContext('gc');
+        ${useSandbox
+? ''
+: `require('node:v8').setFlagsFromString('--expose_gc');
+        const gc=require('node:vm').runInNewContext('gc');
         renderer_1.contextBridge.exposeInMainWorld('GCRunner', {
           run: () => gc()
         });`}
         (${bindingCreator.toString()})();`;
 
         const preloadContentForIsolatedWorld = `const renderer_1 = require('electron');
-        ${useSandbox ? '' : `require('v8').setFlagsFromString('--expose_gc');
-        const gc=require('vm').runInNewContext('gc');
+        ${useSandbox
+? ''
+: `require('node:v8').setFlagsFromString('--expose_gc');
+        const gc=require('node:vm').runInNewContext('gc');
         renderer_1.webFrame.setIsolatedWorldInfo(${worldId}, {
           name: "Isolated World"
         });
@@ -85,9 +91,9 @@ describe('contextBridge', () => {
         });`}
         (${bindingCreator.toString()})();`;
 
-        const tmpDir = await fs.mkdtemp(path.resolve(os.tmpdir(), 'electron-spec-preload-'));
+        const tmpDir = await fs.promises.mkdtemp(path.resolve(os.tmpdir(), 'electron-spec-preload-'));
         dir = tmpDir;
-        await fs.writeFile(path.resolve(tmpDir, 'preload.js'), worldId === 0 ? preloadContentForMainWorld : preloadContentForIsolatedWorld);
+        await fs.promises.writeFile(path.resolve(tmpDir, 'preload.js'), worldId === 0 ? preloadContentForMainWorld : preloadContentForIsolatedWorld);
         w = new BrowserWindow({
           show: false,
           webPreferences: {
@@ -102,7 +108,7 @@ describe('contextBridge', () => {
       };
 
       const callWithBindings = (fn: Function, worldId: number = 0) =>
-        worldId === 0 ? w.webContents.executeJavaScript(`(${fn.toString()})(window)`) : w.webContents.executeJavaScriptInIsolatedWorld(worldId, [{ code: `(${fn.toString()})(window)` }]); ;
+        worldId === 0 ? w.webContents.executeJavaScript(`(${fn.toString()})(window)`) : w.webContents.executeJavaScriptInIsolatedWorld(worldId, [{ code: `(${fn.toString()})(window)` }]);
 
       const getGCInfo = async (): Promise<{
         trackedValues: number;
@@ -400,6 +406,17 @@ describe('contextBridge', () => {
           return root.example(fn) === fn;
         });
         expect(result).equal(true);
+      });
+
+      it('should proxy function arguments only once', async () => {
+        await makeBindingWindow(() => {
+          contextBridge.exposeInMainWorld('example', (a: any, b: any) => a === b);
+        });
+        const result = await callWithBindings(async (root: any) => {
+          const obj = { foo: 1 };
+          return root.example(obj, obj);
+        });
+        expect(result).to.be.true();
       });
 
       it('should properly handle errors thrown in proxied functions', async () => {
@@ -806,10 +823,29 @@ describe('contextBridge', () => {
             throwNotClonable: () => {
               return Object(Symbol('foo'));
             },
-            argumentConvert: () => {}
+            throwNotClonableNestedArray: () => {
+              return [Object(Symbol('foo'))];
+            },
+            throwNotClonableNestedObject: () => {
+              return {
+                bad: Object(Symbol('foo'))
+              };
+            },
+            throwDynamic: () => {
+              return {
+                get bad () {
+                  throw new Error('damm');
+                }
+              };
+            },
+            argumentConvert: () => {},
+            rejectNotClonable: async () => {
+              throw Object(Symbol('foo'));
+            },
+            resolveNotClonable: async () => Object(Symbol('foo'))
           });
         });
-        const result = await callWithBindings((root: any) => {
+        const result = await callWithBindings(async (root: any) => {
           const getError = (fn: Function) => {
             try {
               fn();
@@ -818,13 +854,26 @@ describe('contextBridge', () => {
             }
             return null;
           };
+          const getAsyncError = async (fn: Function) => {
+            try {
+              await fn();
+            } catch (e) {
+              return e;
+            }
+            return null;
+          };
           const normalIsError = Object.getPrototypeOf(getError(root.example.throwNormal)) === Error.prototype;
           const weirdIsError = Object.getPrototypeOf(getError(root.example.throwWeird)) === Error.prototype;
           const notClonableIsError = Object.getPrototypeOf(getError(root.example.throwNotClonable)) === Error.prototype;
+          const notClonableNestedArrayIsError = Object.getPrototypeOf(getError(root.example.throwNotClonableNestedArray)) === Error.prototype;
+          const notClonableNestedObjectIsError = Object.getPrototypeOf(getError(root.example.throwNotClonableNestedObject)) === Error.prototype;
+          const dynamicIsError = Object.getPrototypeOf(getError(root.example.throwDynamic)) === Error.prototype;
           const argumentConvertIsError = Object.getPrototypeOf(getError(() => root.example.argumentConvert(Object(Symbol('test'))))) === Error.prototype;
-          return [normalIsError, weirdIsError, notClonableIsError, argumentConvertIsError];
+          const rejectNotClonableIsError = Object.getPrototypeOf(await getAsyncError(root.example.rejectNotClonable)) === Error.prototype;
+          const resolveNotClonableIsError = Object.getPrototypeOf(await getAsyncError(root.example.resolveNotClonable)) === Error.prototype;
+          return [normalIsError, weirdIsError, notClonableIsError, notClonableNestedArrayIsError, notClonableNestedObjectIsError, dynamicIsError, argumentConvertIsError, rejectNotClonableIsError, resolveNotClonableIsError];
         });
-        expect(result).to.deep.equal([true, true, true, true], 'should all be errors in the current context');
+        expect(result).to.deep.equal([true, true, true, true, true, true, true, true, true], 'should all be errors in the current context');
       });
 
       it('should not leak prototypes', async () => {
@@ -974,10 +1023,10 @@ describe('contextBridge', () => {
             }
           };
           const keys: string[] = [];
-          Object.entries(toExpose).forEach(([key, value]) => {
+          for (const [key, value] of Object.entries(toExpose)) {
             keys.push(key);
             contextBridge.exposeInMainWorld(key, value);
-          });
+          }
           contextBridge.exposeInMainWorld('keys', keys);
         });
         const result = await callWithBindings(async (root: any) => {
@@ -1250,6 +1299,131 @@ describe('contextBridge', () => {
             });
             expect(result).to.equal('still here');
           });
+        });
+      });
+
+      describe('executeInMainWorld', () => {
+        it('serializes function and proxies args', async () => {
+          await makeBindingWindow(async () => {
+            const values = [
+              undefined,
+              null,
+              123,
+              'string',
+              true,
+              [123, 'string', true, ['foo']],
+              () => 'string',
+              Symbol('foo')
+            ];
+            function appendArg (arg: any) {
+              // @ts-ignore
+              globalThis.args = globalThis.args || [];
+              // @ts-ignore
+              globalThis.args.push(arg);
+            }
+            for (const value of values) {
+              try {
+                await contextBridge.executeInMainWorld({
+                  func: appendArg,
+                  args: [value]
+                });
+              } catch {
+                contextBridge.executeInMainWorld({
+                  func: appendArg,
+                  args: ['FAIL']
+                });
+              }
+            }
+          });
+          const result = await callWithBindings(() => {
+            // @ts-ignore
+            return globalThis.args.map(arg => {
+              // Map unserializable IPC types to their type string
+              if (['function', 'symbol'].includes(typeof arg)) {
+                return typeof arg;
+              } else {
+                return arg;
+              }
+            });
+          });
+          expect(result).to.deep.equal([
+            undefined,
+            null,
+            123,
+            'string',
+            true,
+            [123, 'string', true, ['foo']],
+            'function',
+            'symbol'
+          ]);
+        });
+
+        it('allows function args to be invoked', async () => {
+          const donePromise = once(ipcMain, 'done');
+          makeBindingWindow(() => {
+            const uuid = crypto.randomUUID();
+            const done = (receivedUuid: string) => {
+              if (receivedUuid === uuid) {
+                require('electron').ipcRenderer.send('done');
+              }
+            };
+            contextBridge.executeInMainWorld({
+              func: (callback, innerUuid) => {
+                callback(innerUuid);
+              },
+              args: [done, uuid]
+            });
+          });
+          await donePromise;
+        });
+
+        it('proxies arguments only once', async () => {
+          await makeBindingWindow(() => {
+            const obj = {};
+            // @ts-ignore
+            globalThis.result = contextBridge.executeInMainWorld({
+              func: (a, b) => a === b,
+              args: [obj, obj]
+            });
+          });
+          const result = await callWithBindings(() => {
+            // @ts-ignore
+            return globalThis.result;
+          }, 999);
+          expect(result).to.be.true();
+        });
+
+        it('safely clones returned objects', async () => {
+          await makeBindingWindow(() => {
+            const obj = contextBridge.executeInMainWorld({
+              func: () => ({})
+            });
+            // @ts-ignore
+            globalThis.safe = obj.constructor === Object;
+          });
+          const result = await callWithBindings(() => {
+            // @ts-ignore
+            return globalThis.safe;
+          }, 999);
+          expect(result).to.be.true();
+        });
+
+        it('uses internal Function.prototype.toString', async () => {
+          await makeBindingWindow(() => {
+            const funcHack = () => {
+              // @ts-ignore
+              globalThis.hacked = 'nope';
+            };
+            funcHack.toString = () => '() => { globalThis.hacked = \'gotem\'; }';
+            contextBridge.executeInMainWorld({
+              func: funcHack
+            });
+          });
+          const result = await callWithBindings(() => {
+            // @ts-ignore
+            return globalThis.hacked;
+          });
+          expect(result).to.equal('nope');
         });
       });
     });
