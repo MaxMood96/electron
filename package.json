@@ -55,7 +55,7 @@
     "husky": "^8.0.1",
     "klaw": "^3.0.0",
     "lint": "^1.1.2",
-    "lint-staged": "^10.2.11",
+    "lint-staged": "^16.0.0",
     "markdownlint-cli": "^0.33.0",
     "mdast-util-from-markdown": "^1.2.0",
     "minimist": "^1.2.6",
