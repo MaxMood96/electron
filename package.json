@@ -6,7 +6,7 @@
   "devDependencies": {
     "@azure/storage-blob": "^12.9.0",
     "@dsanders11/vscode-markdown-languageservice": "^0.3.0-alpha.4",
-    "@electron/asar": "^3.2.1",
+    "@electron/asar": "^4.0.0",
     "@electron/docs-parser": "^1.1.0",
     "@electron/fiddle-core": "^1.0.4",
     "@electron/github-app-auth": "^1.5.0",
