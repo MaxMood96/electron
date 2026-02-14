@@ -26,7 +26,7 @@
     "buffer": "^6.0.3",
     "chalk": "^4.1.0",
     "check-for-leaks": "^1.2.1",
-    "eslint": "^8.57.1",
+    "eslint": "^9.26.0",
     "eslint-config-standard": "^17.1.0",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-markdown": "^5.1.0",
